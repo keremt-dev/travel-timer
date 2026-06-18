@@ -95,6 +95,13 @@
     }
     #status.error { color: #e74c3c; }
 
+    /* Veri uyarı banner'ı */
+    #data-warn {
+      display: none; background: rgba(231, 76, 60, 0.12); border: 1px solid #e74c3c;
+      border-radius: 6px; padding: 10px 14px; margin-bottom: 16px;
+      color: #e74c3c; font-size: 0.8rem; line-height: 1.4;
+    }
+
     /* Güncelle butonu */
     .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
     .header-row h1 { margin-bottom: 0; }
@@ -129,6 +136,8 @@
     <button class="route-tab active" onclick="switchRoute('r1')">555 → İZBAN → 776</button>
     <button class="route-tab" onclick="switchRoute('r2')">Alaybey İZBAN → 776</button>
   </div>
+
+  <div id="data-warn"></div>
 
   <!-- Güzergâh 1: 555 → Halkapınar İZBAN → Cumaovası → 776 -->
   <div class="route-panel active" id="panel-r1">
@@ -230,7 +239,7 @@
                 <th>Cumaovası</th>
                 <th>776 Kalkış</th>
                 <th>776 Bkl</th>
-                <th>Toplam</th>
+                <th>Toplam Yolculuk</th>
               </tr>
             </thead>
             <tbody id="tbody-r2-gidis"></tbody>
@@ -248,7 +257,7 @@
                 <th>İZBAN Kalkış</th>
                 <th>İZBAN Bkl</th>
                 <th>Alaybey</th>
-                <th>Toplam</th>
+                <th>Toplam Yolculuk</th>
               </tr>
             </thead>
             <tbody id="tbody-r2-donus"></tbody>
@@ -406,10 +415,12 @@ async function fetchEshot(hatNo, forceApi = false) {
  * API doğrudan dizi döner: [{HareketSaati, VarisSaati, ...}, ...]
  * Saat formatı "HH:MM:SS"
  */
-async function fetchIzban(kalkisId, varisId) {
+async function fetchIzban(kalkisId, varisId, forceApi = false) {
   const cacheKey = `izban_${kalkisId}_${varisId}`;
-  const cached = sessionStorage.getItem(cacheKey);
-  if (cached) return JSON.parse(cached);
+  if (!forceApi) {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) return JSON.parse(cached);
+  }
 
   try {
     const res = await fetchWithTimeout(`${IZBAN_BASE}/${kalkisId}/${varisId}`);
@@ -424,6 +435,7 @@ async function fetchIzban(kalkisId, varisId) {
     })).sort((a, b) => a.h - b.h);
 
     sessionStorage.setItem(cacheKey, JSON.stringify(seferler));
+    sessionStorage.setItem('izban_updated', new Date().toISOString());
     return seferler;
   } catch (e) {
     console.warn(`İZBAN API erişilemedi (${kalkisId}→${varisId}), boş sefer listesi kullanılıyor.`);
@@ -435,22 +447,35 @@ async function loadAllData(forceApi = false) {
   const [eshot555, eshot776, izbanHalkCuma, izbanCumaHalk, izbanAlayCuma, izbanCumaAlay] = await Promise.all([
     fetchEshot(555, forceApi),
     fetchEshot(776, forceApi),
-    fetchIzban(21, 32),
-    fetchIzban(32, 21),
-    fetchIzban(16, 32),
-    fetchIzban(32, 16)
+    fetchIzban(21, 32, forceApi),
+    fetchIzban(32, 21, forceApi),
+    fetchIzban(16, 32, forceApi),
+    fetchIzban(32, 16, forceApi)
   ]);
-  return { eshot555, eshot776, izbanHalkCuma, izbanCumaHalk, izbanAlayCuma, izbanCumaAlay };
+  return {
+    eshot555, eshot776, izbanHalkCuma, izbanCumaHalk, izbanAlayCuma, izbanCumaAlay,
+    izbanOk: izbanHalkCuma.length > 0 || izbanAlayCuma.length > 0
+  };
 }
 
 // ── Hesaplama: Güzergâh 1 (555 → İZBAN → 776) ──
 
+/** Input değerini oku, min/max attribute'larına göre sınırla. Boş/geçersizse 0. */
+function clampParam(id) {
+  const el = document.getElementById(id);
+  const raw = parseInt(el.value);
+  const val = Number.isNaN(raw) ? 0 : raw;
+  const min = parseInt(el.min);
+  const max = parseInt(el.max);
+  return Math.max(Number.isNaN(min) ? 0 : min, Math.min(Number.isNaN(max) ? Infinity : max, val));
+}
+
 function getParamsR1() {
   return {
-    sure555:    parseInt(document.getElementById('p-555-sure').value) || 0,
-    halkYuru:   parseInt(document.getElementById('p-halk-yuru').value) || 0,
-    cumaYuru:   parseInt(document.getElementById('p-cuma-yuru').value) || 0,
-    sure776:    parseInt(document.getElementById('p-776-sure').value) || 0,
+    sure555:    clampParam('p-555-sure'),
+    halkYuru:   clampParam('p-halk-yuru'),
+    cumaYuru:   clampParam('p-cuma-yuru'),
+    sure776:    clampParam('p-776-sure'),
   };
 }
 
@@ -552,9 +577,9 @@ function calculateR1Donus(data, params) {
 
 function getParamsR2() {
   return {
-    alayYuru:   parseInt(document.getElementById('p-alay-yuru').value) || 0,
-    cumaYuru:   parseInt(document.getElementById('p-cuma-yuru-r2').value) || 0,
-    sure776:    parseInt(document.getElementById('p-776-sure-r2').value) || 0,
+    alayYuru:   clampParam('p-alay-yuru'),
+    cumaYuru:   clampParam('p-cuma-yuru-r2'),
+    sure776:    clampParam('p-776-sure-r2'),
   };
 }
 
@@ -573,6 +598,8 @@ function calculateR2Gidis(data, params) {
 
     const bus776Kalkis = nextOccurrence(bus776[busIdx], otobusHazir);
     const busBekleme = bus776Kalkis - otobusHazir;
+    // Alaybey'den yola çıkıştan (yürüyüş dahil) 776'ya binmeye kadar toplam süre
+    const toplamSure = bus776Kalkis - (izbanKalkis - params.alayYuru);
 
     rows.push({
       cols: [
@@ -580,7 +607,7 @@ function calculateR2Gidis(data, params) {
         minToTime(cumaVaris),
         minToTime(bus776Kalkis),
         `${busBekleme} dk`,
-        `${busBekleme} dk`
+        `${toplamSure} dk`
       ],
       toplamBekleme: busBekleme,
       busKalkisMin: izbanKalkis - params.alayYuru
@@ -607,6 +634,8 @@ function calculateR2Donus(data, params) {
     const izbanKalkis = nextOccurrence(izbanSefer.h, izbanHazir);
     const izbanBekleme = izbanKalkis - izbanHazir;
     const alayVaris = nextOccurrence(izbanSefer.v, izbanKalkis);
+    // 776'ya binişten Alaybey'e (İZBAN varışı) kadar toplam süre
+    const toplamSure = alayVaris - kalkis776;
 
     rows.push({
       cols: [
@@ -615,7 +644,7 @@ function calculateR2Donus(data, params) {
         minToTime(izbanKalkis),
         `${izbanBekleme} dk`,
         minToTime(alayVaris),
-        `${izbanBekleme} dk`
+        `${toplamSure} dk`
       ],
       toplamBekleme: izbanBekleme,
       busKalkisMin: kalkis776
@@ -645,11 +674,17 @@ function renderTable(tbodyId, rows) {
 
   const minBekleme = Math.min(...rows.map(r => r.toplamBekleme));
 
+  // Satırlar kalkış saatine göre sıralı üretildiği için (ESHOT unique+sort,
+  // İZBAN .sort(a.h-b.h)) en yakın gelecek seferi bulmak yeterlidir; ondan önceki
+  // satırlar bugün kaçırılmış (past), sonrakiler ise gelecektir. nextOccurrence
+  // gece yarısı geçişini doğru wraps ettiği için (şimdi 23:59 iken 00:20 seferi
+  // yarın 00:20 olarak döner) closest gece yarısı seferi olabilir ve ondan
+  // sonraki tüm satırlar gelecek kabul edilir — yarınki seferler yanlışlıkla
+  // soluklaşmaz.
   let closestIdx = -1;
   let closestDiff = Infinity;
   rows.forEach((r, i) => {
-    const rowStart = minuteOfDay(r.busKalkisMin);
-    const diff = nextOccurrence(rowStart, nowMin) - nowMin;
+    const diff = nextOccurrence(minuteOfDay(r.busKalkisMin), nowMin) - nowMin;
     if (diff < closestDiff) {
       closestDiff = diff;
       closestIdx = i;
@@ -658,9 +693,8 @@ function renderTable(tbodyId, rows) {
 
   rows.forEach((row, i) => {
     const tr = document.createElement('tr');
-    const rowStart = minuteOfDay(row.busKalkisMin);
 
-    if (i !== closestIdx && rowStart < nowMin) tr.classList.add('past');
+    if (i < closestIdx) tr.classList.add('past');
     if (row.toplamBekleme === minBekleme) tr.classList.add('best');
     if (i === closestIdx) tr.classList.add('now');
 
@@ -717,6 +751,7 @@ async function init() {
 
     updateTables();
     showDataAge();
+    showDataWarn();
 
     document.querySelectorAll('.params input').forEach(input => {
       input.addEventListener('input', updateTables);
@@ -729,16 +764,35 @@ async function init() {
   }
 }
 
-/** Veri yaşını göster */
+/** İZBAN verisi yoksa uyarı göster, varsa gizle */
+function showDataWarn() {
+  const el = document.getElementById('data-warn');
+  if (!el) return;
+  if (appData && appData.izbanOk === false) {
+    el.textContent = '⚠ İZBAN sefer saatleri şu an alınamadı. İZBAN kalkış/aktarma kolonları boş görünebilir. "Veriyi Güncelle" ile tekrar deneyebilirsiniz.';
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+/** Veri yaşını göster — ESHOT ve İZBAN ayrı ayrı */
 function showDataAge() {
   const el = document.getElementById('data-age');
-  const updated = sessionStorage.getItem('eshot_updated');
-  if (updated) {
-    const d = new Date(updated);
-    el.textContent = `ESHOT: ${d.toLocaleDateString('tr-TR')} ${d.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'})}`;
-  } else {
-    el.textContent = 'ESHOT: lokal dosya';
-  }
+  const fmt = key => {
+    const v = sessionStorage.getItem(key);
+    if (!v) return null;
+    const d = new Date(v);
+    return `${d.toLocaleDateString('tr-TR')} ${d.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'})}`;
+  };
+
+  const parts = [];
+  const eshot = fmt('eshot_updated');
+  parts.push(`ESHOT: ${eshot || 'lokal dosya'}`);
+  const izban = fmt('izban_updated');
+  parts.push(`İZBAN: ${izban || 'önbellekte değil'}`);
+
+  el.textContent = parts.join(' · ');
 }
 
 /** Butona tıklandığında canlı API'den güncelle */
@@ -749,13 +803,13 @@ async function refreshData() {
   btn.className = '';
 
   try {
-    // Sadece ESHOT cache'ini temizle, İZBAN cache'e dokunma
-    sessionStorage.removeItem('eshot_555');
-    sessionStorage.removeItem('eshot_776');
+    // ESHOT + İZBAN cache'ini temizle ki forceApi her ikisini de taze çeksin
+    ['eshot_555', 'eshot_776', 'izban_21_32', 'izban_32_21', 'izban_16_32', 'izban_32_16'].forEach(k => sessionStorage.removeItem(k));
 
     appData = await loadAllData(true);
     updateTables();
     showDataAge();
+    showDataWarn();
 
     btn.textContent = 'Güncellendi';
     btn.classList.add('success');
