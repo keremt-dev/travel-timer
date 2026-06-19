@@ -33,11 +33,13 @@ const fs = require('fs');
 const path = require('path');
 
 const ESHOT_URL = 'https://www.eshot.gov.tr/tr/UlasimSaatleri/-1';
-const FETCH_TIMEOUT_MS = 15000;
+// CI (GitHub Actions, US-based) ESHOT sitesine yavaş ulaştığı için yüksek timeout.
+// Lokalde <5sn, CI'da bazen 20-40sn.
+const FETCH_TIMEOUT_MS = 45000;
 const DEFAULT_HATS = [555, 776];
 
 /**
- * ESHOT sitesine form POST yapar.
+ * ESHOT sitesine form POST yapar (tek deneme).
  * @param {number} hatNo  Hat numarası (örn. 776)
  * @param {0|1} hatYon    0=GİDİŞ, 1=DÖNÜŞ (site her iki yönü de tek yanıtta verir)
  * @returns {Promise<string>} HTML yanıt
@@ -152,12 +154,34 @@ function parseScheduleHtml(html) {
   return { gidis, donus, gidisLabel, donusLabel };
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/**
+ * postForm'u belirli sayıda dener. ESHOT sitesi CI'dan (US-based) bazen
+ * yavaş/timing out oluyor; aralarda bekleme ile tekrar denemek güvenilir.
+ */
+async function postFormWithRetry(hatNo, hatYon, retries = 3) {
+  let lastErr;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await postForm(hatNo, hatYon);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        console.warn(`    deneme ${attempt}/${retries} başarısız (${err.message}), 5sn sonra tekrar denenecek...`);
+        await sleep(5000);
+      }
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Bir hat için saatleri çekip parse eder.
  * @returns {Promise<{gidis: number[], donus: number[]}>}
  */
 async function fetchHat(hatNo) {
-  const html = await postForm(hatNo, 0);
+  const html = await postFormWithRetry(hatNo, 0);
   const result = parseScheduleHtml(html);
 
   if (result.gidis.length === 0) {
@@ -205,7 +229,7 @@ async function main() {
 }
 
 // Test edilebilirlik için export
-module.exports = { postForm, timeToMin, parseScheduleHtml, extractTimesFromSection, fetchHat };
+module.exports = { postForm, postFormWithRetry, timeToMin, parseScheduleHtml, extractTimesFromSection, fetchHat };
 
 // Doğrudan çalıştırıldığında main; require ile import edildiğinde çalışmaz.
 if (require.main === module) {
