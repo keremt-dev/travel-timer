@@ -1,7 +1,7 @@
 name: ESHOT Veri Güncellemesi
 
 # ESHOT güzergah saatlerini resmi siteden (eshot.gov.tr) çekip
-# eshot-*.json dosyalarını günceller. CORS限制 nedeniyle tarayıcıdan
+# eshot-*.json dosyalarını günceller. CORS kısıtı nedeniyle tarayıcıdan
 # çekilemediği için bu workflow (Node.js, CORS yok) aracılığıyla yapılır.
 #
 # Tetikleyiciler:
@@ -31,6 +31,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: ESHOT erişilebilirlik kontrolü
+        run: |
+          echo "ESHOT sitesine bağlantı testi..."
+          curl -sS -o /dev/null -w "HTTP %{http_code}, süre %{time_total}s\n" \
+            --max-time 60 \
+            -X POST "https://www.eshot.gov.tr/tr/UlasimSaatleri/-1" \
+            -H "User-Agent: travel-timer-build-script/1.0" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "hatId=776&hatYon=0&bisikletAparatliMi=False" || echo "curl başarısız"
 
       - name: ESHOT verisini çek
         run: node scripts/fetch-eshot.js
