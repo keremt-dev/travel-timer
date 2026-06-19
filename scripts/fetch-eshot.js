@@ -6,8 +6,12 @@
  * Neden bu script: ESHOT açıveri API'si (acikveri.bizizmir.com) güncel
  * tarifeleri yansıtmıyor (örn. yaz tarifesi). Resmi site güncel ama CORS
  * izin vermediği için tarayıcıdan çekilemiyor. Bu script Node.js ile
- * (CORS yok) çeker ve lokal JSON dosyalarını günceller. GitHub Actions
- * tarafından günde 1 otomatik çalıştırılır.
+ * (CORS yok) çeker ve lokal JSON dosyalarını günceller.
+ *
+ * NOT: ESHOT.gov.tr GitHub Actions (US) IP'lerini coğrafi olarak blokluyor.
+ * Bu yüzden script LOKAL olarak (Türkiye IP'siyle) çalıştırılmalıdır.
+ * update-eshot.bat ile çift tıklayarak veya zamanlanmış görevle otomatik
+ * çalıştırılabilir. Detaylar için README'nin "Veri Güncelleme" bölümü.
  *
  * Kullanım:
  *   node scripts/fetch-eshot.js        # 555 + 776
@@ -33,9 +37,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ESHOT_URL = 'https://www.eshot.gov.tr/tr/UlasimSaatleri/-1';
-// CI (GitHub Actions, US-based) ESHOT sitesine yavaş ulaştığı için yüksek timeout.
-// Lokalde <5sn, CI'da bazen 20-40sn.
-const FETCH_TIMEOUT_MS = 45000;
+const FETCH_TIMEOUT_MS = 30000;
 const DEFAULT_HATS = [555, 776];
 
 /**
