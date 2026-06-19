@@ -102,19 +102,10 @@
       color: #e74c3c; font-size: 0.8rem; line-height: 1.4;
     }
 
-    /* Güncelle butonu */
-    .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    /* Başlık satırı + veri yaşı göstergesi */
+    .header-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; gap: 12px; }
     .header-row h1 { margin-bottom: 0; }
-    #btn-update {
-      padding: 6px 14px; border: 1px solid #333; border-radius: 6px;
-      background: #1a1a1a; color: #888; font-size: 0.75rem; cursor: pointer;
-      transition: all 0.2s;
-    }
-    #btn-update:hover { border-color: #4a9eff; color: #4a9eff; }
-    #btn-update:disabled { opacity: 0.4; cursor: not-allowed; }
-    #btn-update.success { border-color: #2ecc71; color: #2ecc71; }
-    #btn-update.fail { border-color: #e74c3c; color: #e74c3c; }
-    .data-age { font-size: 0.65rem; color: #444; margin-top: 2px; text-align: right; }
+    .data-age { font-size: 0.7rem; color: #555; text-align: right; line-height: 1.4; }
 
     @media (max-width: 1000px) {
       .params { grid-template-columns: repeat(2, 1fr); }
@@ -126,10 +117,7 @@
 
   <div class="header-row">
     <h1>İZBAN Aktarma Saatleri</h1>
-    <div>
-      <button id="btn-update" onclick="refreshData()">Veriyi Güncelle</button>
-      <div class="data-age" id="data-age"></div>
-    </div>
+    <div class="data-age" id="data-age"></div>
   </div>
 
   <div class="route-tabs">
@@ -327,8 +315,6 @@ function waitMinutes(departure, ready) {
 
 // ── API Katmanı ──
 
-const ESHOT_API = 'https://acikveri.bizizmir.com/api/3/action/datastore_search';
-const ESHOT_RESOURCE = 'c6fa6046-f755-47d7-b69e-db6bb06a8b5a';
 const IZBAN_BASE = 'https://openapi.izmir.bel.tr/api/izban/sefersaatleri';
 const FETCH_TIMEOUT_MS = 10000;
 
@@ -339,23 +325,21 @@ function fetchWithTimeout(url, ms = FETCH_TIMEOUT_MS) {
   return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
 }
 
-/** ESHOT kayıtlarını parse et */
-function parseEshotRecords(records) {
-  const unique = arr => [...new Set(arr)].sort((a, b) => a - b);
-  return {
-    gidis: unique(records.map(r => r.GIDIS_SAATI).filter(Boolean).map(timeToMin)),
-    donus: unique(records.map(r => r.DONUS_SAATI).filter(Boolean).map(timeToMin))
-  };
-}
-
+/**
+ * Gömülü ESHOT yedeği. eshot-*.json dosyaları okunamazsa (örn. file:// açılırsa)
+ * son çare olarak kullanılır. scripts/fetch-eshot.js tarafından üretilen
+ * güncel (hafta içi) veriyi yansıtır.
+ *
+ * Not: Bu veri hafta içi (Cuma) tarifesidir. Cumartesi/Pazar daha az sefer var.
+ */
 const ESHOT_FALLBACK = {
   "555": {
-    gidis: [10,20,360,375,382,390,402,404,414,426,438,448,450,451,463,470,476,489,490,492,502,509,514,515,528,536,547,558,566,580,585,602,604,616,623,630,642,644,658,661,672,680,686,699,700,714,718,728,734,737,742,750,756,766,770,775,782,784,794,798,812,813,814,826,830,840,846,854,862,868,878,882,894,896,910,924,927,938,945,952,965,966,980,985,994,1001,1008,1016,1022,1031,1036,1046,1050,1061,1064,1076,1078,1091,1092,1106,1120,1121,1134,1136,1148,1151,1162,1166,1176,1181,1190,1197,1205,1215,1227,1233,1249,1251,1269,1271,1287,1293,1305,1315,1330,1337,1359,1360,1381,1390,1403,1420,1425],
-    donus: [0,20,25,50,396,403,405,416,418,429,440,442,455,462,468,479,481,484,490,492,504,506,507,518,519,528,533,550,553,572,591,594,610,616,629,638,648,656,667,670,684,686,698,705,712,724,726,740,743,754,762,768,779,781,782,795,796,800,810,811,819,824,827,838,843,852,857,859,866,875,880,891,894,907,908,922,923,936,939,950,955,964,975,978,990,992,1005,1006,1020,1034,1035,1048,1050,1062,1065,1076,1080,1090,1095,1104,1110,1118,1125,1132,1140,1146,1155,1160,1170,1174,1185,1188,1200,1202,1215,1216,1230,1241,1245,1260,1263,1275,1285,1291,1307,1309,1310,1329,1330,1350,1351,1370,1373,1395,1400,1417,1430]
+    gidis: [10,360,380,400,420,440,460,480,500,520,540,563,586,609,632,655,678,701,724,747,770,793,816,839,862,885,908,931,954,977,1000,1025,1045,1065,1085,1105,1125,1145,1175,1205,1235,1265,1295,1325,1355,1385,1415],
+    donus: [15,400,420,440,460,480,500,520,540,560,584,607,630,653,676,699,722,745,768,791,814,837,860,883,906,929,952,975,995,1015,1035,1055,1075,1095,1115,1135,1155,1175,1195,1215,1245,1275,1305,1335,1365,1395,1425]
   },
   "776": {
-    gidis: [360,385,410,435,465,490,525,565,600,635,670,705,745,780,815,850,885,915,940,960,995,1030,1065,1095,1140,1185,1210,1215,1245,1250,1290,1330,1390],
-    donus: [395,435,440,470,495,520,545,580,615,655,690,725,760,765,795,830,870,905,940,975,1007,1030,1060,1095,1130,1140,1165,1170,1200,1230,1275,1320,1350,1353,1380,1410]
+    gidis: [0,350,375,400,425,450,475,500,525,550,575,600,625,650,675,700,725,750,780,810,840,870,900,925,950,975,1000,1020,1050,1075,1100,1125,1150,1175,1200,1230,1260,1290,1320,1350,1380,1410],
+    donus: [0,375,440,460,480,500,525,550,575,600,625,650,675,700,725,750,775,800,825,850,875,900,930,955,975,1000,1025,1050,1075,1100,1120,1140,1165,1190,1215,1250,1275,1300,1325,1350,1380,1410]
   }
 };
 
@@ -369,36 +353,24 @@ function cloneEshotFallback(hatNo) {
 }
 
 /**
- * ESHOT verisini yükle. Önce API'yi dener (CORS açıksa),
- * başarısız olursa lokal JSON'dan, o da olmazsa gömülü yedekten okur.
+ * ESHOT verisini yükle. Veri kaynağı: lokal JSON dosyaları
+ * (scripts/fetch-eshot.js + GitHub Actions tarafından günlük güncellenir).
+ * Dosya okunamazsa gömülü yedeğe düşer.
+ *
+ * ESHOT resmi sitesi (eshot.gov.tr) CORS izin vermediği için tarayıcıdan
+ * doğrudan çekilemez; bu yüzden build script + cron yaklaşımı kullanılır.
  */
-async function fetchEshot(hatNo, forceApi = false) {
+async function fetchEshot(hatNo) {
   const cacheKey = `eshot_${hatNo}`;
-  if (!forceApi) {
-    const cached = sessionStorage.getItem(cacheKey);
-    if (cached) return JSON.parse(cached);
-  }
+  const cached = sessionStorage.getItem(cacheKey);
+  if (cached) return JSON.parse(cached);
 
-  // Önce canlı API'yi dene
-  try {
-    const url = `${ESHOT_API}?resource_id=${ESHOT_RESOURCE}&filters={"HAT_NO":${hatNo}}&limit=600`;
-    const res = await fetchWithTimeout(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const result = parseEshotRecords(data.result.records);
-    sessionStorage.setItem(cacheKey, JSON.stringify(result));
-    sessionStorage.setItem('eshot_updated', new Date().toISOString());
-    return result;
-  } catch (e) {
-    console.warn(`ESHOT API erişilemedi (${hatNo}), lokal dosya kullanılıyor.`);
-  }
-
-  // Fallback: lokal JSON
   try {
     const res = await fetch(`eshot-${hatNo}.json`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const result = parseEshotRecords(data.result.records);
+    const result = { gidis: [...data.gidis], donus: [...data.donus] };
+    if (data._updated) sessionStorage.setItem('eshot_updated', data._updated);
     sessionStorage.setItem(cacheKey, JSON.stringify(result));
     return result;
   } catch (e) {
@@ -445,8 +417,8 @@ async function fetchIzban(kalkisId, varisId, forceApi = false) {
 
 async function loadAllData(forceApi = false) {
   const [eshot555, eshot776, izbanHalkCuma, izbanCumaHalk, izbanAlayCuma, izbanCumaAlay] = await Promise.all([
-    fetchEshot(555, forceApi),
-    fetchEshot(776, forceApi),
+    fetchEshot(555),
+    fetchEshot(776),
     fetchIzban(21, 32, forceApi),
     fetchIzban(32, 21, forceApi),
     fetchIzban(16, 32, forceApi),
@@ -769,7 +741,7 @@ function showDataWarn() {
   const el = document.getElementById('data-warn');
   if (!el) return;
   if (appData && appData.izbanOk === false) {
-    el.textContent = '⚠ İZBAN sefer saatleri şu an alınamadı. İZBAN kalkış/aktarma kolonları boş görünebilir. "Veriyi Güncelle" ile tekrar deneyebilirsiniz.';
+    el.textContent = '⚠ İZBAN sefer saatleri şu an alınamadı. İZBAN kalkış/aktarma kolonları boş görünebilir. Sayfayı yenileyerek tekrar deneyebilirsiniz.';
     el.style.display = 'block';
   } else {
     el.style.display = 'none';
@@ -788,39 +760,11 @@ function showDataAge() {
 
   const parts = [];
   const eshot = fmt('eshot_updated');
-  parts.push(`ESHOT: ${eshot || 'lokal dosya'}`);
+  parts.push(`ESHOT: ${eshot || 'gömülü yedek'}`);
   const izban = fmt('izban_updated');
   parts.push(`İZBAN: ${izban || 'önbellekte değil'}`);
 
   el.textContent = parts.join(' · ');
-}
-
-/** Butona tıklandığında canlı API'den güncelle */
-async function refreshData() {
-  const btn = document.getElementById('btn-update');
-  btn.disabled = true;
-  btn.textContent = 'Güncelleniyor...';
-  btn.className = '';
-
-  try {
-    // ESHOT + İZBAN cache'ini temizle ki forceApi her ikisini de taze çeksin
-    ['eshot_555', 'eshot_776', 'izban_21_32', 'izban_32_21', 'izban_16_32', 'izban_32_16'].forEach(k => sessionStorage.removeItem(k));
-
-    appData = await loadAllData(true);
-    updateTables();
-    showDataAge();
-    showDataWarn();
-
-    btn.textContent = 'Güncellendi';
-    btn.classList.add('success');
-  } catch (err) {
-    btn.textContent = 'Başarısız — ' + err.message;
-    btn.classList.add('fail');
-    console.error('Güncelleme hatası:', err);
-  }
-
-  btn.disabled = false;
-  setTimeout(() => { btn.textContent = 'Veriyi Güncelle'; btn.className = ''; }, 4000);
 }
 
 init();

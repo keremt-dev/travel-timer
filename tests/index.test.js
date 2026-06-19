@@ -112,7 +112,7 @@ async function run() {
   const quietConsole = Object.assign(Object.create(console), { warn() {} });
   const noNetworkApp = createAppContext({ console: quietConsole });
   const eshotRows = await noNetworkApp.fetchEshot(555);
-  assert.ok(eshotRows.gidis.length > 0, 'fetchEshot should use embedded fallback when API and local JSON fetch fail');
+  assert.ok(eshotRows.gidis.length > 0, 'fetchEshot should use embedded fallback when local JSON fetch fails');
   assert.ok(eshotRows.donus.length > 0, 'fetchEshot fallback should include return trips');
 
   const izbanRows = await noNetworkApp.fetchIzban(21, 32);
