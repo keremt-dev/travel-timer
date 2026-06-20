@@ -110,25 +110,68 @@ function extractTimesFromSection(section) {
 }
 
 /**
- * ESHOT HTML yanıtından iki yönün (GİDİŞ, DÖNÜŞ) ilk gün saat listelerini çıkarır.
+ * HTML entity decode (min: &#199; → Ç, Çarşamba için).
+ * ESHOT sitesi Türkçe karakterleri bazen entity olarak gömer.
+ */
+function decodeEntities(s) {
+  return s.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+          .replace(/&amp;/g, '&').replace(/&ccedil;/g, 'ç').replace(/&Ccedil;/g, 'Ç');
+}
+
+/**
+ * Türkçe gün adını 3 tarifeye mapler.
+ * @returns {'weekday'|'saturday'|'sunday'|null}
+ */
+function dayNameToTariff(dayName) {
+  const d = decodeEntities(dayName).trim();
+  if (['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma'].includes(d)) return 'weekday';
+  if (d === 'Cumartesi') return 'saturday';
+  if (d === 'Pazar') return 'sunday';
+  return null;
+}
+
+/**
+ * Bir gün panelinden iki yönün saat listelerini çıkarır.
+ * Panel içinde ilk <h4>Kalkış</h4> = gidis (ilk durak), ikincisi = donus.
  *
- * Sayfada birden çok <h4>X Kalkış</h4> başlığı vardır (her gün için 2 tane).
- * İlk "GİDİŞ yönü" (ilk durak adı) ve ilk "DÖNÜŞ yönü" (ikinci durak adı)
- * başlıklarının listesini döndürür.
+ * @param {string} panelHtml  Tek bir gün panelinin HTML'i
+ * @param {string} gidisLabel İlk durak adı (örn. "DOĞANBEY Kalkış")
+ * @param {string} donusLabel İkinci durak adı (örn. "CUMAOVASI AKT. Kalkış")
+ * @returns {{gidis: number[], donus: number[]}}
+ */
+function parsePanel(panelHtml, gidisLabel, donusLabel) {
+  // Her etiketin bu panel içindeki ilk geçtiği yerden, sonraki <h4>'e kadar slice.
+  // Sonraki <h4> yoksa (yön panelin sonunda) panelin tamamını al.
+  const listFor = label => {
+    const re = new RegExp(`<h4[^>]*>${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/h4>`);
+    const m = re.exec(panelHtml);
+    if (!m) return [];
+    const after = panelHtml.slice(m.index + m[0].length);
+    const nextH4 = after.indexOf('<h4');
+    const section = nextH4 > 0 ? after.slice(0, nextH4) : after;
+    return extractTimesFromSection(section);
+  };
+  return { gidis: listFor(gidisLabel), donus: listFor(donusLabel) };
+}
+
+/**
+ * ESHOT HTML yanıtından 3 tarifenin (weekday/saturday/sunday) saat listelerini çıkarır.
  *
- * Durak adlarını sayfadaki ilk iki <h4> başlığından otomatik türetir; böylece
- * hat değiştiğinde (DOĞANBEY yerine başka durak) kod güncellenmez.
+ * Sayfa 8 günlük rolling week verir; her gün bir <div class="panel panel-default">
+ * içinde, başlığında <h4><strong>DATE</strong></h4> + <h4>GÜNADI</h4>.
+ * Her panelde 2 yön listesi var (ilk durak = gidis, ikinci = donus).
+ *
+ * Her tarifeden ilk bulunan günü alır (hafta içi, cumartesi, pazar).
  *
  * @param {string} html
- * @returns {{gidis: number[], donus: number[], gidisLabel: string, donusLabel: string}}
+ * @returns {{weekday: {gidis,donus}, saturday: {gidis,donus}, sunday: {gidis,donus}, weekdayLabel: string, saturdayLabel: string, sundayLabel: string}}
  */
 function parseScheduleHtml(html) {
+  // İlk iki benzersiz yön etiketini bul (ilk durak = gidis, ikinci = donus)
   const h4matches = [...html.matchAll(/<h4[^>]*>([^<]*Kalkış[^<]*)<\/h4>/g)];
   if (h4matches.length < 2) {
     throw new Error('Yön başlıkları (<h4>...Kalkış</h4>) bulunamadı');
   }
-
-  // İlk iki benzersiz yön başlığı → gidis ve donus etiketleri
   const labels = [];
   for (const m of h4matches) {
     const label = m[1].trim();
@@ -137,23 +180,49 @@ function parseScheduleHtml(html) {
   }
   const [gidisLabel, donusLabel] = labels;
 
-  // Her etiketin ilk geçtiği yerden saat listesini çıkar (sonraki <h4>'e kadar)
-  const listFor = label => {
-    const idx = html.indexOf(`<h4`);
-    // bu label'ın tüm geçtiği yerleri bul, ilkini al
-    const re = new RegExp(`<h4[^>]*>${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/h4>`);
-    const m = re.exec(html);
-    if (!m) return [];
-    const after = html.slice(m.index + m[0].length);
-    const nextH4 = after.indexOf('<h4');
-    const section = nextH4 > 0 ? after.slice(0, nextH4) : after.slice(0, 10000);
-    return extractTimesFromSection(section);
-  };
+  // Gün panellerini bul: <h4><strong>DATE</strong></h4> + <h4>GÜNADI</h4>
+  const dayAnchors = [...html.matchAll(
+    /<h4[^>]*><strong>(\d{1,2}\.\d{1,2}\.\d{4})<\/strong><\/h4>\s*<h4[^>]*>([^<]+)<\/h4>/g
+  )];
 
-  const gidis = listFor(gidisLabel);
-  const donus = listFor(donusLabel);
+  if (dayAnchors.length === 0) {
+    throw new Error('Gün paneli başlıkları bulunamadı (HTML yapısı değişmiş olabilir)');
+  }
 
-  return { gidis, donus, gidisLabel, donusLabel };
+  // Panelleri tariff'e göre topla (her tarifeden ilk bulunan gün)
+  const result = { weekday: null, saturday: null, sunday: null };
+  const labels2 = { weekday: 'weekdayLabel', saturday: 'saturdayLabel', sunday: 'sundayLabel' };
+
+  for (let i = 0; i < dayAnchors.length; i++) {
+    const [, date, rawDayName] = dayAnchors[i];
+    const dayName = decodeEntities(rawDayName).trim();
+    const tariff = dayNameToTariff(dayName);
+    if (!tariff || result[tariff]) continue;  // zaten bulundu
+
+    // Bu panel: bu anchor'dan bir sonraki anchor'a (veya dosya sonuna) kadar
+    const start = dayAnchors[i].index;
+    const end = i + 1 < dayAnchors.length ? dayAnchors[i + 1].index : html.length;
+    const panelHtml = html.slice(start, end);
+
+    result[tariff] = parsePanel(panelHtml, gidisLabel, donusLabel);
+    result[labels2[tariff]] = `${date} ${dayName}`;
+  }
+
+  // En az hafta içi tarifesinin gelmiş olması beklenir
+  if (!result.weekday) {
+    throw new Error('Hafta içi tarifesine ait gün paneli bulunamadı');
+  }
+  // Cumartesi/Pazar eksikse hafta içine düş (bazı dönemlerde aynı olabilir)
+  if (!result.saturday) {
+    result.saturday = result.weekday;
+    result.saturdayLabel = result.weekdayLabel + ' (hafta içi fallback)';
+  }
+  if (!result.sunday) {
+    result.sunday = result.weekday;
+    result.sundayLabel = result.weekdayLabel + ' (hafta içi fallback)';
+  }
+
+  return result;
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -179,18 +248,20 @@ async function postFormWithRetry(hatNo, hatYon, retries = 3) {
 }
 
 /**
- * Bir hat için saatleri çekip parse eder.
- * @returns {Promise<{gidis: number[], donus: number[]}>}
+ * Bir hat için 3 tarifeyi (weekday/saturday/sunday) çekip parse eder.
+ * @returns {Promise<{weekday: {gidis,donus}, saturday: {gidis,donus}, sunday: {gidis,donus}}>}
  */
 async function fetchHat(hatNo) {
   const html = await postFormWithRetry(hatNo, 0);
   const result = parseScheduleHtml(html);
 
-  if (result.gidis.length === 0) {
-    throw new Error(`Hat ${hatNo} GİDİŞ saatleri parse edilemedi (HTML yapısı değişmiş olabilir)`);
-  }
-  if (result.donus.length === 0) {
-    throw new Error(`Hat ${hatNo} DÖNÜŞ saatleri parse edilemedi (HTML yapısı değişmiş olabilir)`);
+  for (const tariff of ['weekday', 'saturday', 'sunday']) {
+    if (result[tariff].gidis.length === 0) {
+      throw new Error(`Hat ${hatNo} ${tariff} GİDİŞ saatleri parse edilemedi (HTML yapısı değişmiş olabilir)`);
+    }
+    if (result[tariff].donus.length === 0) {
+      throw new Error(`Hat ${hatNo} ${tariff} DÖNÜŞ saatleri parse edilemedi (HTML yapısı değişmiş olabilir)`);
+    }
   }
 
   return result;
@@ -198,10 +269,12 @@ async function fetchHat(hatNo) {
 
 function writeJson(hatNo, data) {
   const outPath = path.join(__dirname, '..', `eshot-${hatNo}.json`);
-  const payload = { ...data, _updated: new Date().toISOString() };
-  // Etiketleri JSON'a ekleme (sadele format)
-  delete payload.gidisLabel;
-  delete payload.donusLabel;
+  const payload = {
+    weekday: data.weekday,
+    saturday: data.saturday,
+    sunday: data.sunday,
+    _updated: new Date().toISOString()
+  };
   fs.writeFileSync(outPath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
   return outPath;
 }
@@ -215,13 +288,12 @@ async function main() {
 
   for (const hatNo of hats) {
     try {
-      const html = await postForm(hatNo, 0);
-      const parsed = parseScheduleHtml(html);
+      const parsed = await fetchHat(hatNo);
       const outPath = writeJson(hatNo, parsed);
-      console.log(
-        `  ✓ Hat ${hatNo}: GİDİŞ ${parsed.gidisLabel} (${parsed.gidis.length}), ` +
-        `DÖNÜŞ ${parsed.donusLabel} (${parsed.donus.length}) -> ${path.basename(outPath)}`
-      );
+      console.log(`  ✓ Hat ${hatNo} -> ${path.basename(outPath)}`);
+      console.log(`      Hafta içi ${parsed.weekdayLabel}: gidis ${parsed.weekday.gidis.length}, donus ${parsed.weekday.donus.length}`);
+      console.log(`      Cumartesi ${parsed.saturdayLabel}: gidis ${parsed.saturday.gidis.length}, donus ${parsed.saturday.donus.length}`);
+      console.log(`      Pazar ${parsed.sundayLabel}: gidis ${parsed.sunday.gidis.length}, donus ${parsed.sunday.donus.length}`);
     } catch (err) {
       console.error(`  ✗ Hat ${hatNo} GÜNCELLENEMEDİ: ${err.message}`);
       console.error(`    Dosyaya dokunulmadı (eski veri korundu).`);
@@ -231,7 +303,10 @@ async function main() {
 }
 
 // Test edilebilirlik için export
-module.exports = { postForm, postFormWithRetry, timeToMin, parseScheduleHtml, extractTimesFromSection, fetchHat };
+module.exports = {
+  postForm, postFormWithRetry, timeToMin, parseScheduleHtml, extractTimesFromSection,
+  fetchHat, parsePanel, dayNameToTariff, decodeEntities
+};
 
 // Doğrudan çalıştırıldığında main; require ile import edildiğinde çalışmaz.
 if (require.main === module) {
