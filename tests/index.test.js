@@ -41,9 +41,12 @@ async function run() {
     'findFirstAfter should wrap to the next-day 00:20 service'
   );
 
+  // 776 yön mantığı: gidis=DOĞANBEY→CUMAOVASI, donus=CUMAOVASI→DOĞANBEY
+  // - R1/R2 GİDİŞ: yolcu Cumaovası'ndan biner → donus (CUMAOVASI→DOĞANBEY)
+  // - R1/R2 DÖNÜŞ: yolcu DOĞANBEY'den biner → gidis (DOĞANBEY→CUMAOVASI)
   const routeData = {
     eshot555: { gidis: [], donus: [550, 650] },
-    eshot776: { gidis: [600], donus: [500] },
+    eshot776: { gidis: [500], donus: [600] },   // gidis=08:20 (DOĞANBEY), donus=10:00 (CUMAOVASI)
     izbanCumaHalk: [{ h: 510, v: 540 }, { h: 610, v: 640 }],
     izbanCumaAlay: [{ h: 510, v: 540 }, { h: 610, v: 640 }]
   };
@@ -53,19 +56,21 @@ async function run() {
     cumaYuru: 5,
     halkYuru: 5
   });
-  assert.equal(r1Donus[0].cols[0], '08:20', 'R1 dönüş should use 776 DONUS_SAATI');
+  // R1 DÖNÜŞ: 776'ya DOĞANBEY'den biner → gidis = 08:20
+  assert.equal(r1Donus[0].cols[0], '08:20', 'R1 dönüş 776 kalkışı DOĞANBEY (gidis) olmalı');
 
   const r2Donus = app.calculateR2Donus(routeData, {
     sure776: 0,
     cumaYuru: 5
   });
-  assert.equal(r2Donus[0].cols[0], '08:20', 'R2 dönüş should use 776 DONUS_SAATI');
+  // R2 DÖNÜŞ: 776'ya DOĞANBEY'den biner → gidis = 08:20
+  assert.equal(r2Donus[0].cols[0], '08:20', 'R2 dönüş 776 kalkışı DOĞANBEY (gidis) olmalı');
 
   // ── Kritik #2: R2 "Toplam Yolculuk" sütunu gerçek toplam yolculuk süresini göstermeli ──
-  // Gidis: İZBAN(08:30) → Cumaovası(09:00) + 5dk yürüyüş → 776(10:00) kalkış
+  // Gidis: İZBAN(08:30) → Cumaovası(09:00) + 5dk yürüyüş → 776(10:00) kalkış (CUMAOVASI kalkışı = donus)
   //        Alaybey yürüyüşü 5dk: toplam = 10:00 - (08:30 - 5dk) = 95 dk
   const r2GidisData = {
-    eshot776: { gidis: [600], donus: [] },
+    eshot776: { gidis: [], donus: [600] },   // donus=10:00 (CUMAOVASI kalkışı)
     izbanAlayCuma: [{ h: 510, v: 540 }]
   };
   const r2Gidis = app.calculateR2Gidis(r2GidisData, { alayYuru: 5, cumaYuru: 5, sure776: 0 });

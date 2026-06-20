@@ -501,7 +501,8 @@ function getParamsR1() {
 function calculateR1Gidis(data, params) {
   const rows = [];
   const { gidis: bus555 } = data.eshot555;
-  const { gidis: bus776 } = data.eshot776;
+  // 776'ya Cumaovası'ndan biniliyor → CUMAOVASI→DOĞANBEY yönü = donus
+  const { donus: bus776 } = data.eshot776;
   const izbanSeferler = data.izbanHalkCuma;
   const izbanHareket = izbanSeferler.map(s => s.h);
 
@@ -547,7 +548,8 @@ function calculateR1Gidis(data, params) {
 
 function calculateR1Donus(data, params) {
   const rows = [];
-  const { donus: bus776 } = data.eshot776;
+  // 776'ya DOĞANBEY'den (son durak) biniliyor → DOĞANBEY→CUMAOVASI yönü = gidis
+  const { gidis: bus776 } = data.eshot776;
   const { donus: bus555 } = data.eshot555;
   const izbanSeferler = data.izbanCumaHalk;
   const izbanHareket = izbanSeferler.map(s => s.h);
@@ -604,7 +606,8 @@ function getParamsR2() {
 
 function calculateR2Gidis(data, params) {
   const rows = [];
-  const { gidis: bus776 } = data.eshot776;
+  // 776'ya Cumaovası'ndan biniliyor → CUMAOVASI→DOĞANBEY yönü = donus
+  const { donus: bus776 } = data.eshot776;
   const izbanSeferler = data.izbanAlayCuma;
 
   for (const sefer of izbanSeferler) {
@@ -638,7 +641,8 @@ function calculateR2Gidis(data, params) {
 
 function calculateR2Donus(data, params) {
   const rows = [];
-  const { donus: bus776 } = data.eshot776;
+  // 776'ya DOĞANBEY'den biniliyor → DOĞANBEY→CUMAOVASI yönü = gidis
+  const { gidis: bus776 } = data.eshot776;
   const izbanSeferler = data.izbanCumaAlay;
   const izbanHareket = izbanSeferler.map(s => s.h);
 
