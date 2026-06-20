@@ -354,19 +354,29 @@ function cloneEshotFallback(hatNo) {
 
 /**
  * ESHOT verisini yükle. Veri kaynağı: lokal JSON dosyaları
- * (scripts/fetch-eshot.js + GitHub Actions tarafından günlük güncellenir).
- * Dosya okunamazsa gömülü yedeğe düşer.
+ * (scripts/fetch-eshot.js tarafından üretilir, scripts/update-eshot.bat ile
+ * güncellenir). Dosya okunamazsa gömülü yedeğe düşer.
  *
  * ESHOT resmi sitesi (eshot.gov.tr) CORS izin vermediği için tarayıcıdan
- * doğrudan çekilemez; bu yüzden build script + cron yaklaşımı kullanılır.
+ * doğrudan çekilemez; bu yüzden lokal build script kullanılır.
+ *
+ * Cache-busting: 'eshot-X.json' yerine 'eshot-X.json?v=<gömülü fallback sürümü>'
+ * ile çekilir. ESHOT_FALLBACK güncellendiğinde (commit) sürüm değişir ve
+ * tarayıcı eski HTTP cache'ini bypass eder. sessionStorage ise sekme boyunca
+ * tutulur (aynı sekmede tekrar tekrar fetch yapmaz).
  */
 async function fetchEshot(hatNo) {
   const cacheKey = `eshot_${hatNo}`;
   const cached = sessionStorage.getItem(cacheKey);
   if (cached) return JSON.parse(cached);
 
+  // Gömülü yedeğin bir özeti sürüm imzası olarak: ilk/son saat + sayı.
+  // ESHOT_FALLBACK güncellendiğinde bu değer değişir → ?v= değişir → HTTP cache bypass.
+  const fb = ESHOT_FALLBACK[hatNo];
+  const version = fb ? `${fb.gidis.length}_${fb.gidis[fb.gidis.length - 1]}` : '0';
+
   try {
-    const res = await fetch(`eshot-${hatNo}.json`);
+    const res = await fetch(`eshot-${hatNo}.json?v=${version}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const result = { gidis: [...data.gidis], donus: [...data.donus] };
